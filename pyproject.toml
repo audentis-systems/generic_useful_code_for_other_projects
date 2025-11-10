@@ -17,6 +17,10 @@ classifiers = [
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
+dependencies = [
+	     'boto3',
+]
+
 
 [project.urls]
 Homepage = "https://github.com/audentis-systems/generic_useful_code_for_other_projects"
