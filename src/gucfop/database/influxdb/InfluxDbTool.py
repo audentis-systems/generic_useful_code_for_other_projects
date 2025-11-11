@@ -1,6 +1,11 @@
+import pandas as pd
+
 from influxdb_client import InfluxDBClient
 from influxdb_client import PostBucketRequest
 from influxdb_client.rest import ApiException
+from influxdb_client import Point
+from influxdb_client import WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 class InfluxDbTool():
 
@@ -52,7 +57,7 @@ class InfluxDbTool():
     #
     # delete a bucket
     #
-    def delete_bucket(self, bucket_name -> str):
+    def delete_bucket(self, bucket_name : str):
         buckets_api = self.client.buckets_api()
         buckets = buckets_api.find_buckets().buckets
 
@@ -71,4 +76,95 @@ class InfluxDbTool():
         except ApiException as e:
             print(f"Error deleting bucket: {e}")
 
+    #
+    # Run a Flux query
+    #
+    def run_flux_query_on_forex_database(self, query : str) -> pd.DataFrame:
+        query_api = self.client.query_api()
+        df = (
+            query_api
+            .query_data_frame(query, org = self.INFLUXDB_ORG)
+        )
+        return df
 
+    #
+    # Validate point (for data insertion)
+    #
+    def validate_point(measurement, tags, fields, ALLOWED_TAGS, ALLOWED_FIELDS, epoch_ns):
+        """
+        measurement : str
+        tags        : dict[str, str]
+        fields      : dict[str, Any]
+        epoch_ns    : int|float|(int,int)|None
+                      - ns since Unix epoch, OR
+                      - (seconds, nanoseconds) tuple
+        """
+        # --- schema checks ---
+        extra_tags = set(tags) - ALLOWED_TAGS
+        if extra_tags:
+            raise ValueError(f"Unexpected tag(s): {extra_tags}")
+
+        for k, v in fields.items():
+            if k not in ALLOWED_FIELDS:
+                raise ValueError(f"Unexpected field: {k}")
+            if not isinstance(v, ALLOWED_FIELDS[k]):
+                raise TypeError(f"Field {k} must be {ALLOWED_FIELDS[k].__name__}")
+
+        # --- build point ---
+        p = Point(measurement)
+        for k, v in tags.items():
+            p = p.tag(k, v)
+        for k, v in fields.items():
+            p = p.field(k, v)
+
+        # --- timestamp handling ---
+        if epoch_ns is not None:
+            # Handle (sec, nsec) tuple
+            if isinstance(epoch_ns, tuple):
+                sec, nsec = epoch_ns
+                epoch_ns = int(sec) * 10**9 + int(nsec)
+            else:
+                epoch_ns = int(epoch_ns)
+
+            p = p.time(epoch_ns, WritePrecision.NS)
+
+        return p
+
+
+
+
+    #
+    # bulk candlestick insert
+    #
+    def insert_dictionary_list(
+        self,
+        list_of_dictionaries_to_insert,
+        ALLOWED_TAGS,
+        ALLOWED_FIELDS,
+        INFLUXDB_BUCKET,
+        timeout = 120000,
+        batch_size = 2000,
+    ):
+
+        write_api = self.client.write_api(write_options = SYNCHRONOUS)
+        
+        points = []
+        for item in list_of_dictionaries_to_insert:
+            
+            p = InfluxDbTool.validate_point(
+                item['measurement'],
+                item['tags'],
+                item['fields'],
+                ALLOWED_TAGS,
+                ALLOWED_FIELDS,
+                item['time'],
+            )
+            points.append(p)
+
+        for i in range(0, len(points), batch_size):
+            batch = points[i:i + batch_size]
+            write_api.write(
+                bucket = INFLUXDB_BUCKET,
+                record = batch,
+                write_precision = WritePrecision.NS,
+            )
