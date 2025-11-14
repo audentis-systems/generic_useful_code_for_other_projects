@@ -17,11 +17,12 @@ class InfluxDbTool():
             INFLUXDB_URL : str,
             INFLUXDB_TOKEN : str,
             INFLUXDB_ORG : str,
+            timeout : int = 120000,
     ):
         self.INFLUXDB_URL = INFLUXDB_URL
         self.INFLUXDB_TOKEN = INFLUXDB_TOKEN
         self.INFLUXDB_ORG = INFLUXDB_ORG
-        self.client = InfluxDBClient(url=self.INFLUXDB_URL, token=self.INFLUXDB_TOKEN, org=self.INFLUXDB_ORG)
+        self.client = InfluxDBClient(url=self.INFLUXDB_URL, token=self.INFLUXDB_TOKEN, org=self.INFLUXDB_ORG, timeout = timeout)
 
     #
     # deconstructor
@@ -138,7 +139,6 @@ class InfluxDbTool():
         ALLOWED_TAGS,
         ALLOWED_FIELDS,
         INFLUXDB_BUCKET,
-        timeout = 120000,
         batch_size = 2000,
         write_precision_str = 's',
     ):
