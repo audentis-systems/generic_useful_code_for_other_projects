@@ -79,7 +79,7 @@ class InfluxDbTool():
     #
     # Run a Flux query
     #
-    def run_flux_query_on_forex_database(self, query : str) -> pd.DataFrame:
+    def run_flux_query_on_forex_database_and_get_dataframe(self, query : str) -> pd.DataFrame:
         query_api = self.client.query_api()
         df = (
             query_api
@@ -90,15 +90,16 @@ class InfluxDbTool():
     #
     # Validate point (for data insertion)
     #
-    def validate_point(measurement, tags, fields, ALLOWED_TAGS, ALLOWED_FIELDS, epoch_ns):
-        """
-        measurement : str
-        tags        : dict[str, str]
-        fields      : dict[str, Any]
-        epoch_ns    : int|float|(int,int)|None
-                      - ns since Unix epoch, OR
-                      - (seconds, nanoseconds) tuple
-        """
+    def validate_point(
+            measurement,
+            tags,
+            fields,
+            ALLOWED_TAGS,
+            ALLOWED_FIELDS,
+            timestamp,
+            write_precision_str = 's',
+    ):
+
         # --- schema checks ---
         extra_tags = set(tags) - ALLOWED_TAGS
         if extra_tags:
@@ -117,16 +118,11 @@ class InfluxDbTool():
         for k, v in fields.items():
             p = p.field(k, v)
 
-        # --- timestamp handling ---
-        if epoch_ns is not None:
-            # Handle (sec, nsec) tuple
-            if isinstance(epoch_ns, tuple):
-                sec, nsec = epoch_ns
-                epoch_ns = int(sec) * 10**9 + int(nsec)
-            else:
-                epoch_ns = int(epoch_ns)
-
-            p = p.time(epoch_ns, WritePrecision.NS)
+        write_precision = WritePrecision.NS
+        if write_precision_str == 's':
+            write_precision = WritePrecision.S
+            
+        p = p.time(timestamp, write_precision)
 
         return p
 
@@ -144,6 +140,7 @@ class InfluxDbTool():
         INFLUXDB_BUCKET,
         timeout = 120000,
         batch_size = 2000,
+        write_precision_str = 's',
     ):
 
         write_api = self.client.write_api(write_options = SYNCHRONOUS)
@@ -161,10 +158,14 @@ class InfluxDbTool():
             )
             points.append(p)
 
+        write_precision = WritePrecision.NS
+        if write_precision_str == 's':
+            write_precision = WritePrecision.S
+            
         for i in range(0, len(points), batch_size):
             batch = points[i:i + batch_size]
             write_api.write(
                 bucket = INFLUXDB_BUCKET,
                 record = batch,
-                write_precision = WritePrecision.NS,
+                write_precision = write_precision,
             )
