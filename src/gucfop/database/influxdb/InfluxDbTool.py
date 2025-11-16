@@ -86,7 +86,13 @@ class InfluxDbTool():
             query_api
             .query_data_frame(query, org = self.INFLUXDB_ORG)
         )
-        return df
+        df.drop(columns = ['result', 'table'], inplace = True)
+        df['_time'] = pd.to_datetime(df['_time'])
+        df['unix_epoch_s'] = df['_time'].view('int64') // 10**9
+        df.drop(columns = ['_time'], inplace = True)
+        column_list = ['unix_epoch_s']
+        column_list.extend([x for x in df.columns if not x == 'unix_epoch_s'])
+        return df[column_list].copy()
 
     #
     # Validate point (for data insertion)
